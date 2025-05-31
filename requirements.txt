@@ -1,0 +1,6 @@
+django
+paho-mqtt
+asgiref
+channels
+psycopg2-binary
+dj-database-url

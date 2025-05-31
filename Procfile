@@ -1,0 +1,1 @@
+worker: python mqtt_client.py
