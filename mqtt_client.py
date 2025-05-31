@@ -108,7 +108,7 @@ def on_message(client, userdata, msg):
 def get_mqtt_client():
     global mqtt_client_instance
     if mqtt_client_instance is None:
-        mqtt_client_instance = mqtt.Client()
+        mqtt_client_instance = mqtt.Client(protocol=mqtt.MQTTv311)
        
         mqtt_client_instance.username_pw_set(MQTT_USERNAME, MQTT_PASSWORD)
         
@@ -125,7 +125,7 @@ def publish_message(topic, message):
     client.publish(topic, message)
 
 def start_mqtt():
-    client = mqtt.Client()
+    client = mqtt.Client(protocol=mqtt.MQTTv311)
     
     client.username_pw_set(MQTT_USERNAME, MQTT_PASSWORD)
     
