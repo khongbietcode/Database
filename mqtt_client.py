@@ -6,21 +6,25 @@ from asgiref.sync import async_to_sync
 from channels.layers import get_channel_layer
 from datetime import datetime
 from django.utils import timezone
-import time  # Thêm để giữ ứng dụng chạy
+import time
 
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'webquanly.settings')
 django.setup()
 
 from app.models import CardEvent, CardUser, PersonalAttendanceSetting
 
-MQTT_BROKER = 'ad66d2d5e34a426099f94af411e4ad88.s1.eu.hivemq.cloud' 
-MQTT_PORT = 8883 
+MQTT_BROKER = 'ad66d2d5e34a426099f94af411e4ad88.s1.eu.hivemq.cloud'
+MQTT_PORT = 8883
 MQTT_TOPIC = 'rfid/uid'
-
 MQTT_USERNAME = 'Taicute123'
 MQTT_PASSWORD = 'Tai123123'
 
 channel_layer = get_channel_layer()
+
+# Khởi tạo MQTT client dùng toàn cục
+mqtt_client = mqtt.Client(client_id="rfid_main_client", clean_session=False, protocol=mqtt.MQTTv311)
+mqtt_client.username_pw_set(MQTT_USERNAME, MQTT_PASSWORD)
+mqtt_client.tls_set()
 
 def on_connect(client, userdata, flags, rc):
     if rc == 0:
@@ -37,8 +41,9 @@ def on_message(client, userdata, msg):
     try:
         payload = json.loads(data)
         card_id = payload.get('card_id')
-        user_name = "Unknown User" 
+        user_name = "Unknown User"
         card_user = None
+
         if card_id:
             try:
                 card_user = CardUser.objects.select_related('user').get(card_id=card_id)
@@ -53,11 +58,8 @@ def on_message(client, userdata, msg):
                 publish_message('esp32/status', "lỗi hệ thống")
                 return
 
-            # Nếu tìm thấy user
-            CardEvent.objects.create(
-                card_id=card_id,
-                user=card_user.user,
-            )
+            CardEvent.objects.create(card_id=card_id, user=card_user.user)
+
             async_to_sync(channel_layer.group_send)(
                 'esp32_data',
                 {
@@ -96,30 +98,18 @@ def on_message(client, userdata, msg):
     except Exception as e:
         print('Error processing MQTT message:', e)
 
-def get_mqtt_client():
-    client = mqtt.Client(protocol=mqtt.MQTTv311)
-    client.username_pw_set(MQTT_USERNAME, MQTT_PASSWORD)
-    client.tls_set()
-    client.on_connect = on_connect
-    client.on_message = on_message
-    client.connect(MQTT_BROKER, MQTT_PORT, 60)
-    return client
-
 def publish_message(topic, message):
     try:
-        client = get_mqtt_client()
-        client.loop_start()
-        client.publish(topic, message)
-        time.sleep(1)  # Đảm bảo publish xong trước khi thoát
-        client.loop_stop()
-        client.disconnect()
+        mqtt_client.publish(topic, message)
+        print(f"Published '{message}' to topic '{topic}'")
     except Exception as e:
         print(f"Failed to publish message: {e}")
 
 def start_mqtt():
-    client = get_mqtt_client()
-    client.loop_forever()
+    mqtt_client.on_connect = on_connect
+    mqtt_client.on_message = on_message
+    mqtt_client.connect(MQTT_BROKER, MQTT_PORT, 60)
+    mqtt_client.loop_forever()
 
-# Điểm bắt đầu của chương trình
 if __name__ == "__main__":
-    start_mqtt()  # giữ tiến trình sống mãi với loop_forever()
+    start_mqtt()
