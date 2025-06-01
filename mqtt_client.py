@@ -24,7 +24,10 @@ channel_layer = get_channel_layer()
 # Khởi tạo MQTT client dùng toàn cục
 mqtt_client = mqtt.Client(client_id="rfid_main_client", clean_session=False, protocol=mqtt.MQTTv311)
 mqtt_client.username_pw_set(MQTT_USERNAME, MQTT_PASSWORD)
-mqtt_client.tls_set()
+mqtt_client.tls_set(ca_certs="certs/Hivemq_Ca.pem")
+
+import os
+assert os.path.exists("certs/Hivemq_Ca.pem"), "CA file not found!"
 
 def on_connect(client, userdata, flags, rc):
     
