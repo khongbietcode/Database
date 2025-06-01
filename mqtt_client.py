@@ -1,5 +1,5 @@
 import os
-import ssl  # Import thêm ssl để sử dụng các tùy chọn TLS
+import ssl
 import django
 import json
 import paho.mqtt.client as mqtt
@@ -8,6 +8,7 @@ from channels.layers import get_channel_layer
 from datetime import datetime
 from django.utils import timezone
 import time
+import random
 
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'webquanly.settings')
 django.setup()
@@ -28,20 +29,21 @@ STATUS_TOPIC = f"{MQTT_USERNAME}/esp32/status"
 
 channel_layer = get_channel_layer()
 
-# Tạo file CA certificate từ nội dung biến môi trường (nếu có)
-if CA_CERT_CONTENT:
-    with open("certs/Hivemq_Ca.pem", "w") as ca_cert_file:
-        ca_cert_file.write(CA_CERT_CONTENT)
-
-# Khởi tạo MQTT client dùng toàn cục
-mqtt_client = mqtt.Client(client_id="rfid_main_client", clean_session=False, protocol=mqtt.MQTTv311)
+# Khởi tạo MQTT client với Client ID ngẫu nhiên
+CLIENT_ID = f"railway_client_{random.randint(1000,9999)}"
+mqtt_client = mqtt.Client(client_id=CLIENT_ID, clean_session=True, protocol=mqtt.MQTTv311)
 mqtt_client.username_pw_set(MQTT_USERNAME, MQTT_PASSWORD)
 
-# Cấu hình TLS
-mqtt_client.tls_set(ca_certs="certs/Hivemq_Ca.pem", cert_reqs=ssl.CERT_NONE)  # Không yêu cầu xác thực CA
-mqtt_client.tls_insecure_set(True)  # Cho phép kết nối không an toàn
+# Cấu hình TLS an toàn hơn
+ssl_context = ssl.create_default_context()
+if CA_CERT_CONTENT:
+    ssl_context.load_verify_locations(cadata=CA_CERT_CONTENT)
+else:
+    # Chế độ development (không nên dùng production)
+    ssl_context.check_hostname = False
+    ssl_context.verify_mode = ssl.CERT_NONE
 
-assert os.path.exists("certs/Hivemq_Ca.pem"), "CA file not found!"
+mqtt_client.tls_set_context(ssl_context)
 
 def on_connect(client, userdata, flags, rc):
     if rc == 0:
@@ -49,7 +51,16 @@ def on_connect(client, userdata, flags, rc):
         client.subscribe(MQTT_TOPIC)
         client.subscribe(ESP32_TOPIC)
     else:
-        print(f'Failed to connect, return code {rc}')
+        # Bổ sung thông báo lỗi chi tiết
+        errors = {
+            1: "Incorrect protocol version",
+            2: "Invalid client identifier",
+            3: "Server unavailable",
+            4: "Bad username/password",
+            5: "Not authorised"
+        }
+        error_msg = errors.get(rc, f"Unknown error ({rc})")
+        print(f'Connection failed: {error_msg}')
 
 def on_message(client, userdata, msg):
     print(f"on_message called. Topic: {msg.topic}, Payload: {msg.payload}")
@@ -123,20 +134,30 @@ def publish_message(topic, message):
         print(f"Failed to publish message: {e}")
 
 def on_disconnect(client, userdata, rc):
-    print(f"Disconnected from MQTT broker with result code {rc}")
+    print(f"Disconnected with code {rc}")
     if rc != 0:
-        print("Unexpected disconnection. Trying to reconnect...")
-        try:
-            client.reconnect()
-        except Exception as e:
-            print(f"Reconnect failed: {e}")
+        print("Reconnecting...")
+        # Xử lý reconnect an toàn
+        while True:
+            try:
+                client.reconnect()
+                return
+            except Exception as e:
+                print(f"Reconnect failed: {e}")
+                time.sleep(5)
 
 def start_mqtt():
     mqtt_client.on_connect = on_connect
     mqtt_client.on_message = on_message
     mqtt_client.on_disconnect = on_disconnect
-    mqtt_client.connect(MQTT_BROKER, MQTT_PORT, 60)
-    mqtt_client.loop_forever()
+    
+    try:
+        mqtt_client.connect(MQTT_BROKER, MQTT_PORT, 60)
+        mqtt_client.loop_start()  # Sử dụng loop_start thay vì loop_forever
+    except Exception as e:
+        print(f"Initial connection failed: {e}")
+        # Khởi động tiến trình reconnect
+        on_disconnect(mqtt_client, None, 0)
 
 if __name__ == "__main__":
     start_mqtt()
