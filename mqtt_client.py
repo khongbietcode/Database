@@ -13,7 +13,7 @@ django.setup()
 
 from app.models import CardEvent, CardUser, PersonalAttendanceSetting
 
-MQTT_BROKER = 'ad66d2d5e34a426099f94af411e4ad88.s1.eu.hivemq.cloud'
+MQTT_BROKER = '0c1804ec304d42579831c43b09c0c5b3.s1.eu.hivemq.cloud'
 MQTT_PORT = 8883
 MQTT_TOPIC = 'rfid/uid'
 MQTT_USERNAME = 'Taicute123'
