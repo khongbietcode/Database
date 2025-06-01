@@ -27,6 +27,7 @@ mqtt_client.username_pw_set(MQTT_USERNAME, MQTT_PASSWORD)
 mqtt_client.tls_set()
 
 def on_connect(client, userdata, flags, rc):
+    
     if rc == 0:
         print('Connected successfully to MQTT broker!')
         client.subscribe(MQTT_TOPIC)
@@ -105,9 +106,19 @@ def publish_message(topic, message):
     except Exception as e:
         print(f"Failed to publish message: {e}")
 
+def on_disconnect(client, userdata, rc):
+    print(f"Disconnected from MQTT broker with result code {rc}")
+    if rc != 0:
+        print("Unexpected disconnection. Trying to reconnect...")
+        try:
+            client.reconnect()
+        except Exception as e:
+            print(f"Reconnect failed: {e}")
+
 def start_mqtt():
     mqtt_client.on_connect = on_connect
     mqtt_client.on_message = on_message
+    mqtt_client.on_disconnect = on_disconnect  # Thêm dòng này
     mqtt_client.connect(MQTT_BROKER, MQTT_PORT, 60)
     mqtt_client.loop_forever()
 
