@@ -1,4 +1,5 @@
 import os
+import ssl  # Import thêm ssl để sử dụng các tùy chọn TLS
 import django
 import json
 import paho.mqtt.client as mqtt
@@ -16,10 +17,14 @@ from app.models import CardEvent, CardUser, PersonalAttendanceSetting
 # Sử dụng các biến môi trường
 MQTT_BROKER = os.getenv("MQTT_BROKER", '0c1804ec304d42579831c43b09c0c5b3.s1.eu.hivemq.cloud')
 MQTT_PORT = int(os.getenv("MQTT_PORT", 8883))
-MQTT_TOPIC = os.getenv("MQTT_TOPIC", 'rfid/uid')
 MQTT_USERNAME = os.getenv("MQTT_USERNAME", "Taicute123")
 MQTT_PASSWORD = os.getenv("MQTT_PASSWORD", "Tai123123")
 CA_CERT_CONTENT = os.getenv("CA_CERT_CONTENT")
+
+# Đảm bảo tất cả các topic bắt đầu bằng tên người dùng
+MQTT_TOPIC = f"{MQTT_USERNAME}/rfid/uid"
+ESP32_TOPIC = f"{MQTT_USERNAME}/esp32/data"
+STATUS_TOPIC = f"{MQTT_USERNAME}/esp32/status"
 
 channel_layer = get_channel_layer()
 
@@ -31,7 +36,10 @@ if CA_CERT_CONTENT:
 # Khởi tạo MQTT client dùng toàn cục
 mqtt_client = mqtt.Client(client_id="rfid_main_client", clean_session=False, protocol=mqtt.MQTTv311)
 mqtt_client.username_pw_set(MQTT_USERNAME, MQTT_PASSWORD)
-mqtt_client.tls_set(ca_certs="certs/Hivemq_Ca.pem")
+
+# Cấu hình TLS
+mqtt_client.tls_set(ca_certs="certs/Hivemq_Ca.pem", cert_reqs=ssl.CERT_NONE)  # Không yêu cầu xác thực CA
+mqtt_client.tls_insecure_set(True)  # Cho phép kết nối không an toàn
 
 assert os.path.exists("certs/Hivemq_Ca.pem"), "CA file not found!"
 
@@ -39,7 +47,7 @@ def on_connect(client, userdata, flags, rc):
     if rc == 0:
         print('Connected successfully to MQTT broker!')
         client.subscribe(MQTT_TOPIC)
-        client.subscribe('esp32/data')
+        client.subscribe(ESP32_TOPIC)
     else:
         print(f'Failed to connect, return code {rc}')
 
@@ -60,11 +68,11 @@ def on_message(client, userdata, msg):
                 print(f"Found user_name: {user_name} for card_id: {card_id}")
             except CardUser.DoesNotExist:
                 print(f"No user found for card_id: {card_id}")
-                publish_message('esp32/status', "người dùng không tồn tại")
+                publish_message(STATUS_TOPIC, "người dùng không tồn tại")
                 return
             except Exception as db_error:
                 print(f"Database lookup error: {db_error}")
-                publish_message('esp32/status', "lỗi hệ thống")
+                publish_message(STATUS_TOPIC, "lỗi hệ thống")
                 return
 
             CardEvent.objects.create(card_id=card_id, user=card_user.user)
@@ -98,8 +106,8 @@ def on_message(client, userdata, msg):
                 else:
                     status = "đúng giờ"
 
-            publish_message('esp32/status', status)
-            print(f"Đã gửi trạng thái '{status}' tới ESP32 qua MQTT topic 'esp32/status'")
+            publish_message(STATUS_TOPIC, status)
+            print(f"Đã gửi trạng thái '{status}' tới ESP32 qua MQTT topic '{STATUS_TOPIC}'")
         else:
             print("Received MQTT message without card_id")
     except json.JSONDecodeError:
