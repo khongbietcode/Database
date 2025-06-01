@@ -13,24 +13,29 @@ django.setup()
 
 from app.models import CardEvent, CardUser, PersonalAttendanceSetting
 
-MQTT_BROKER = '0c1804ec304d42579831c43b09c0c5b3.s1.eu.hivemq.cloud'
-MQTT_PORT = 8883
-MQTT_TOPIC = 'rfid/uid'
-MQTT_USERNAME = 'Taicute123'
-MQTT_PASSWORD = 'Tai123123'
+# Sử dụng các biến môi trường
+MQTT_BROKER = os.getenv("MQTT_BROKER", '0c1804ec304d42579831c43b09c0c5b3.s1.eu.hivemq.cloud')
+MQTT_PORT = int(os.getenv("MQTT_PORT", 8883))
+MQTT_TOPIC = os.getenv("MQTT_TOPIC", 'rfid/uid')
+MQTT_USERNAME = os.getenv("MQTT_USERNAME", "Taicute123")
+MQTT_PASSWORD = os.getenv("MQTT_PASSWORD", "Tai123123")
+CA_CERT_CONTENT = os.getenv("CA_CERT_CONTENT")
 
 channel_layer = get_channel_layer()
+
+# Tạo file CA certificate từ nội dung biến môi trường (nếu có)
+if CA_CERT_CONTENT:
+    with open("certs/Hivemq_Ca.pem", "w") as ca_cert_file:
+        ca_cert_file.write(CA_CERT_CONTENT)
 
 # Khởi tạo MQTT client dùng toàn cục
 mqtt_client = mqtt.Client(client_id="rfid_main_client", clean_session=False, protocol=mqtt.MQTTv311)
 mqtt_client.username_pw_set(MQTT_USERNAME, MQTT_PASSWORD)
 mqtt_client.tls_set(ca_certs="certs/Hivemq_Ca.pem")
 
-import os
 assert os.path.exists("certs/Hivemq_Ca.pem"), "CA file not found!"
 
 def on_connect(client, userdata, flags, rc):
-    
     if rc == 0:
         print('Connected successfully to MQTT broker!')
         client.subscribe(MQTT_TOPIC)
@@ -121,7 +126,7 @@ def on_disconnect(client, userdata, rc):
 def start_mqtt():
     mqtt_client.on_connect = on_connect
     mqtt_client.on_message = on_message
-    mqtt_client.on_disconnect = on_disconnect  # Thêm dòng này
+    mqtt_client.on_disconnect = on_disconnect
     mqtt_client.connect(MQTT_BROKER, MQTT_PORT, 60)
     mqtt_client.loop_forever()
 
